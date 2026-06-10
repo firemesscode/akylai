@@ -193,13 +193,7 @@ async function processUpdate(update: any) {
 
   const lang = await getLang(chatId);
 
-  // Запрос похож на новости/сводку — прикрепляем новостную картинку
-  if (/новост|сводк|что нового|что происходит|news|хәбәр|яңалык/i.test(text)) {
-    const photoId = await kvGet("news_photo");
-    if (photoId) {
-      await sendPhoto(chatId, photoId);
-    }
-  }
+  const isNewsQuery = /новост|сводк|что нового|что происходит|news|хәбәр|яңалык/i.test(text);
 
   // Иногда бот реагирует на сообщение эмодзи (не блокируем основной поток)
   if (Math.random() < 0.3 && message.message_id) {
@@ -219,15 +213,25 @@ async function processUpdate(update: any) {
 
   const answer = await askGroqStream(history, lang, async (partial) => {
     if (placeholderId) {
-      // Промежуточные версии шлём без HTML (текст ещё может быть оборван)
       await editMessage(chatId, placeholderId, partial + " ▌");
     }
   });
 
   await pushHistory(chatId, { role: "assistant", content: answer });
 
-  // Финальная версия: markdown от модели конвертируем в HTML
   const pretty = mdToHtml(answer);
+
+  // Новостной запрос: удаляем плейсхолдер и шлём фото с текстом как подписью
+  if (isNewsQuery) {
+    const photoId = await kvGet("news_photo");
+    if (photoId && placeholderId) {
+      // Удаляем «Отвечаю...» и отправляем фото + текст одним сообщением
+      await editMessage(chatId, placeholderId, "​"); // невидимый символ
+      await sendPhoto(chatId, photoId, pretty.slice(0, 1024));
+      return;
+    }
+  }
+
   if (placeholderId) {
     await editMessage(chatId, placeholderId, pretty, true);
   } else {

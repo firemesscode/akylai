@@ -137,7 +137,9 @@ export async function answerCallback(callbackQueryId: string, text?: string) {
 // Конвертация markdown от LLM в HTML Telegram:
 // сначала экранируем HTML, затем **bold**, `code`, заголовки.
 export function mdToHtml(s: string): string {
-  let t = s
+  // Убираем цифровые сноски [1], [2][3] и т.д. (артефакты Tavily/поиска)
+  let t = s.replace(/\[\d+\]/g, "");
+  t = t
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
