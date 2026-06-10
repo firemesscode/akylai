@@ -94,6 +94,23 @@ async function processUpdate(update: any) {
     return;
   }
 
+  // /emoji — показывает custom_emoji_id всех премиум-эмодзи в сообщении.
+  // Пришли боту сообщение с нужными эмодзи, потом /emoji — получишь их ID.
+  if (text === "/emoji") {
+    const entities: any[] = message.entities ?? [];
+    const ids = entities
+      .filter((e: any) => e.type === "custom_emoji")
+      .map((e: any) => `<code>${e.custom_emoji_id}</code>`)
+      .join("\n");
+    await sendMessage(
+      chatId,
+      ids
+        ? `Найденные emoji_id:\n${ids}`
+        : "Перешли сообщение с премиум-эмодзи, затем напиши /emoji — покажу их ID."
+    );
+    return;
+  }
+
   await sendChatAction(chatId);
   pushHistory(chatId, { role: "user", content: text });
   const answer = await askGroq(getHistory(chatId));
