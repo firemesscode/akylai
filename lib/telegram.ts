@@ -138,20 +138,25 @@ export async function answerCallback(callbackQueryId: string, text?: string) {
   });
 }
 
-// Конвертация markdown от LLM в HTML Telegram:
-// сначала экранируем HTML, затем **bold**, `code`, заголовки.
+// Конвертация markdown от LLM в HTML Telegram
 export function mdToHtml(s: string): string {
-  // Убираем цифровые сноски [1], [2][3] и т.д. (артефакты Tavily/поиска)
+  // Убираем цифровые сноски [1], [2][3] (артефакты Tavily/поиска)
   let t = s.replace(/\[\d+\]/g, "");
+  // Экранируем HTML-спецсимволы
   t = t
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+  // Блоки кода
   t = t.replace(/```[\w]*\n?([\s\S]+?)```/g, "<pre>$1</pre>");
   t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  // Жирный / курсив
   t = t.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   t = t.replace(/__(.+?)__/g, "<i>$1</i>");
+  // Заголовки → жирный
   t = t.replace(/^#{1,6}\s*(.+)$/gm, "<b>$1</b>");
+  // Маркированные списки (* / - в начале строки) → красивый символ
+  t = t.replace(/^[ \t]*[\*\-]\s+/gm, "🔹 ");
   return t;
 }
 

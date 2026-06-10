@@ -205,7 +205,11 @@ async function processUpdate(update: any) {
     ).catch(() => {});
   }
 
-  const newsPhotoId = isNewsQuery ? await kvGet("news_photo") : null;
+  // Фото для новостных ответов: сначала проверяем env (постоянно),
+  // затем Redis (если настроен и задан через /setnewsphoto)
+  const newsPhotoId = isNewsQuery
+    ? (process.env.NEWS_PHOTO_URL ?? await kvGet("news_photo"))
+    : null;
 
   // Мгновенный плейсхолдер, затем плавное дописывание через editMessageText
   await sendChatAction(chatId);
