@@ -1,8 +1,11 @@
 import Groq from "groq-sdk";
 import type { Lang } from "./store";
 
-// gpt-oss-120b: reasoning + встроенный browser_search (поиск в интернете)
-const MODEL = "openai/gpt-oss-120b";
+// qwen3-32b: лимит gpt-oss-120b исчерпан. У qwen нет browser_search,
+// поэтому поиск отключён (SUPPORTS_SEARCH). reasoning_format: "hidden"
+// прячет <think>-размышления модели из ответа.
+const MODEL = "qwen/qwen3-32b";
+const SUPPORTS_SEARCH = false;
 
 const LANG_RULES: Record<Lang, string> = {
   ru: "Отвечай на русском языке. Если пользователь пишет по-татарски — отвечай по-татарски.",
@@ -21,9 +24,13 @@ export function systemPrompt(lang: Lang): string {
 
 ${LANG_RULES[lang]}
 
-Если вопрос про свежие новости, события, цены, погоду или факты,
+${SUPPORTS_SEARCH
+  ? `Если вопрос про свежие новости, события, цены, погоду или факты,
 которые могли измениться — используй поиск в интернете и отвечай
-по актуальным данным.
+по актуальным данным.`
+  : `У тебя НЕТ доступа в интернет. Если спрашивают про свежие новости
+или события — честно скажи, что актуальных данных у тебя нет,
+и предложи проверить официальные источники.`}
 
 ФОРМАТ ОТВЕТА — строго обычный текст:
 - НЕ используй markdown: никаких **, __, ##, \`\`\` и списков через * или -.
@@ -58,8 +65,9 @@ async function tryStream(
     max_tokens: 2048,
     temperature: 0.7,
     stream: true,
+    reasoning_format: "hidden",
   };
-  if (withTools) {
+  if (withTools && SUPPORTS_SEARCH) {
     params.tools = [{ type: "browser_search" }];
     params.tool_choice = "auto";
   }
@@ -91,8 +99,9 @@ async function tryPlain(messages: any[], withTools: boolean): Promise<string> {
     messages,
     max_tokens: 2048,
     temperature: 0.7,
+    reasoning_format: "hidden",
   };
-  if (withTools) {
+  if (withTools && SUPPORTS_SEARCH) {
     params.tools = [{ type: "browser_search" }];
     params.tool_choice = "auto";
   }
