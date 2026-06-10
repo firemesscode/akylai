@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { askGroqStream } from "@/lib/groq";
+import { askGroqStream, debugGroq } from "@/lib/groq";
 import {
   sendMessage,
   sendContactRequest,
@@ -161,6 +161,13 @@ async function processUpdate(update: any) {
     }
     const sent = await broadcast(payload);
     await sendMessage(chatId, `📢 Оповещение отправлено: ${sent} чат(ов).`);
+    return;
+  }
+
+  if (text === "/debug" && isAdmin(userId)) {
+    await sendMessage(chatId, "🔧 Проверяю Groq...");
+    const report = await debugGroq();
+    await sendMessage(chatId, report, { parse_mode: undefined });
     return;
   }
 

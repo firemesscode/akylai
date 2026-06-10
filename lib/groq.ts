@@ -100,6 +100,39 @@ async function tryPlain(messages: any[], withTools: boolean): Promise<string> {
   return completion.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
+// Диагностика для /debug: пробует все три варианта и возвращает отчёт
+export async function debugGroq(): Promise<string> {
+  const messages: any[] = [
+    { role: "user", content: "Скажи одно слово: работаю" },
+  ];
+  const report: string[] = [];
+  report.push(`key: ${process.env.GROQ_API_KEY ? "задан (" + process.env.GROQ_API_KEY.slice(0, 7) + "...)" : "НЕ ЗАДАН!"}`);
+  report.push(`model: ${MODEL}`);
+
+  try {
+    const r = await tryPlain(messages, false);
+    report.push(`без поиска: OK — "${r.slice(0, 50)}"`);
+  } catch (e: any) {
+    report.push(`без поиска: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
+  }
+
+  try {
+    const r = await tryPlain(messages, true);
+    report.push(`с поиском: OK — "${r.slice(0, 50)}"`);
+  } catch (e: any) {
+    report.push(`с поиском: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
+  }
+
+  try {
+    const r = await tryStream(messages, true, async () => {});
+    report.push(`стрим+поиск: OK — "${r.slice(0, 50)}"`);
+  } catch (e: any) {
+    report.push(`стрим+поиск: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
+  }
+
+  return report.join("\n\n");
+}
+
 // Цепочка фоллбэков: стрим с поиском → без стрима с поиском →
 // без поиска. Что-то из этого должно ответить.
 export async function askGroqStream(
