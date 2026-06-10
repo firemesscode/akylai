@@ -9,6 +9,7 @@ import {
   editMessage,
   setReaction,
   answerCallback,
+  sendPhoto,
   mdToHtml,
   isRussianPhone,
 } from "@/lib/telegram";
@@ -20,6 +21,8 @@ import {
   getLang,
   setLang,
   registerChat,
+  kvGet,
+  kvSet,
   type Lang,
 } from "@/lib/store";
 import { ALERT_BPLA, ALERT_ROCKET, ALERT_CLEAR, broadcast } from "@/lib/alerts";
@@ -125,6 +128,17 @@ async function processUpdate(update: any) {
   // Регистрируем чат для рассылки оповещений
   registerChat(chatId).catch(() => {});
 
+  // Админ прислал фото с подписью /setnewsphoto — сохраняем file_id,
+  // эта картинка будет прикрепляться к новостным ответам
+  if (message.photo && isAdmin(userId)) {
+    if ((message.caption ?? "").trim() === "/setnewsphoto") {
+      const best = message.photo[message.photo.length - 1];
+      await kvSet("news_photo", best.file_id);
+      await sendMessage(chatId, "🖼 Готово! Эта картинка будет у новостных ответов.");
+      return;
+    }
+  }
+
   // 3. Обычный текст
   const text: string | undefined = message.text;
   if (!text) return;
@@ -171,6 +185,14 @@ async function processUpdate(update: any) {
   }
 
   const lang = await getLang(chatId);
+
+  // Запрос похож на новости/сводку — прикрепляем новостную картинку
+  if (/новост|сводк|что нового|что происходит|news|хәбәр|яңалык/i.test(text)) {
+    const photoId = await kvGet("news_photo");
+    if (photoId) {
+      await sendPhoto(chatId, photoId);
+    }
+  }
 
   // Иногда бот реагирует на сообщение эмодзи (не блокируем основной поток)
   if (Math.random() < 0.3 && message.message_id) {

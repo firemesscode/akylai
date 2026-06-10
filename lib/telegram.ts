@@ -114,6 +114,19 @@ export async function setReaction(chatId: number, messageId: number, emoji: stri
   });
 }
 
+// Фото по file_id (или URL) с подписью
+export async function sendPhoto(
+  chatId: number,
+  photo: string,
+  caption?: string
+) {
+  return call("sendPhoto", {
+    chat_id: chatId,
+    photo,
+    ...(caption ? { caption, parse_mode: "HTML" } : {}),
+  });
+}
+
 export async function answerCallback(callbackQueryId: string, text?: string) {
   return call("answerCallbackQuery", {
     callback_query_id: callbackQueryId,
