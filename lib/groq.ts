@@ -1,23 +1,27 @@
-import Groq from "groq-sdk";
 import type { Lang } from "./store";
 
-// Каскад моделей: если модель недоступна (кончился лимит, 429/5xx) —
-// автоматически пробуем следующую. Первая в списке — основная.
+// OpenRouter — один API-ключ, 28+ бесплатных моделей, автопереключение.
+// Ключ: openrouter.ai → Keys → Create Key (карта не нужна).
+// Переменная: OPENROUTER_API_KEY (добавить в Vercel).
+//
+// Каскад: при 429/5xx автоматически переходим к следующей модели.
+// :free — суффикс бесплатных моделей на OpenRouter.
+
+const OR_BASE = "https://openrouter.ai/api/v1/chat/completions";
+
 type ModelCfg = {
   id: string;
-  search: boolean;        // умеет ли искать в интернете
-  browserTool?: boolean;  // нужен ли явный tools: browser_search (gpt-oss)
-  hideReasoning?: boolean; // прятать <think> (qwen)
+  search: boolean;
 };
 
 const MODELS: ModelCfg[] = [
-  // агентная система Groq: веб-поиск и код встроены, ничего передавать не надо
-  { id: "groq/compound", search: true },
-  // gpt-oss: поиск через явный browser_search
-  { id: "openai/gpt-oss-120b", search: true, browserTool: true },
-  // запасные без поиска
-  { id: "llama-3.3-70b-versatile", search: false },
-  { id: "qwen/qwen3-32b", search: false, hideReasoning: true },
+  // Авторотатор OpenRouter — сам выбирает лучшую доступную бесплатную модель
+  { id: "openrouter/auto", search: false },
+  // Конкретные бесплатные модели — запасные, если авторотатор недоступен
+  { id: "deepseek/deepseek-r1:free", search: false },
+  { id: "meta-llama/llama-3.3-70b-instruct:free", search: false },
+  { id: "qwen/qwen3-235b-a22b:free", search: false },
+  { id: "google/gemini-2.0-flash-exp:free", search: false },
 ];
 
 const LANG_RULES: Record<Lang, string> = {
@@ -56,31 +60,33 @@ export type ChatMessage = {
   content: string;
 };
 
-let client: Groq | null = null;
-
-function getClient(): Groq {
-  if (!client) {
-    client = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  }
-  return client;
-}
-
 const FAIL_TEXT = "Кичерегез! Что-то пошло не так, попробуй ещё раз 🙏";
 
-function buildParams(cfg: ModelCfg, messages: any[], stream: boolean): any {
-  const params: any = {
-    model: cfg.id,
-    messages,
-    max_tokens: 2048,
-    temperature: 0.7,
-  };
-  if (stream) params.stream = true;
-  if (cfg.hideReasoning) params.reasoning_format = "hidden";
-  if (cfg.browserTool) {
-    params.tools = [{ type: "browser_search" }];
-    params.tool_choice = "auto";
-  }
-  return params;
+function apiKey(): string {
+  return process.env.OPENROUTER_API_KEY ?? "";
+}
+
+async function callOR(
+  cfg: ModelCfg,
+  messages: any[],
+  stream: boolean
+): Promise<Response> {
+  return fetch(OR_BASE, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey()}`,
+      "HTTP-Referer": "https://akylbot.vercel.app",
+      "X-Title": "AkylBot",
+    },
+    body: JSON.stringify({
+      model: cfg.id,
+      messages,
+      max_tokens: 2048,
+      temperature: 0.7,
+      stream,
+    }),
+  });
 }
 
 async function tryStream(
@@ -88,35 +94,47 @@ async function tryStream(
   messages: any[],
   onPartial: (text: string) => Promise<void>
 ): Promise<string> {
-  const stream = await getClient().chat.completions.create(
-    buildParams(cfg, messages, true)
-  );
+  const res = await callOR(cfg, messages, true);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
   let full = "";
   let lastSent = 0;
   let lastTime = Date.now();
 
-  for await (const chunk of stream as any) {
-    const delta = chunk.choices?.[0]?.delta?.content;
-    if (typeof delta === "string" && delta) {
-      full += delta;
-      const now = Date.now();
-      // Плавное дописывание: не чаще раза в ~1.5 сек (лимиты Telegram)
-      if (now - lastTime > 1500 && full.length - lastSent > 60) {
-        lastTime = now;
-        lastSent = full.length;
-        await onPartial(full);
-      }
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    for (const line of chunk.split("\n")) {
+      const l = line.trim();
+      if (!l.startsWith("data:")) continue;
+      const data = l.slice(5).trim();
+      if (data === "[DONE]") break;
+      try {
+        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta) {
+          full += delta;
+          const now = Date.now();
+          // Плавное дописывание: не чаще раза в ~1.5 сек (лимиты Telegram)
+          if (now - lastTime > 1500 && full.length - lastSent > 60) {
+            lastTime = now;
+            lastSent = full.length;
+            await onPartial(full);
+          }
+        }
+      } catch {}
     }
   }
   return full.trim();
 }
 
 async function tryPlain(cfg: ModelCfg, messages: any[]): Promise<string> {
-  const completion: any = await getClient().chat.completions.create(
-    buildParams(cfg, messages, false)
-  );
-  return completion.choices?.[0]?.message?.content?.trim() ?? "";
+  const res = await callOR(cfg, messages, false);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return data?.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
 // Каскад: для каждой модели пробуем стрим, затем без стрима;
@@ -150,26 +168,21 @@ export async function askGroqStream(
   return FAIL_TEXT;
 }
 
-// Диагностика для /debug: статус каждой модели каскада
+// Диагностика для /debug: статус ключа и каждой модели каскада
 export async function debugGroq(): Promise<string> {
+  const key = apiKey();
   const report: string[] = [];
-  report.push(
-    `key: ${process.env.GROQ_API_KEY ? "задан (" + process.env.GROQ_API_KEY.slice(0, 7) + "...)" : "НЕ ЗАДАН!"}`
-  );
+  report.push(`key: ${key ? "задан (" + key.slice(0, 8) + "...)" : "НЕ ЗАДАН!"}`);
+  report.push(`сервис: OpenRouter`);
 
+  const test = [{ role: "user", content: "Скажи одно слово: работаю" }];
   for (const cfg of MODELS) {
-    const messages: any[] = [
-      { role: "user", content: "Скажи одно слово: работаю" },
-    ];
     try {
-      const r = await tryPlain(cfg, messages);
-      report.push(`${cfg.id}: OK — "${r.slice(0, 40)}"`);
+      const r = await tryPlain(cfg, test);
+      report.push(`${cfg.id}: ✅ "${r.slice(0, 40)}"`);
     } catch (e: any) {
-      report.push(
-        `${cfg.id}: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 200)}`
-      );
+      report.push(`${cfg.id}: ❌ ${String(e?.message ?? e).slice(0, 150)}`);
     }
   }
-
   return report.join("\n\n");
 }
