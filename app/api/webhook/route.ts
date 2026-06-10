@@ -15,15 +15,14 @@ export const maxDuration = 60;
 // Работают только если у владельца бота есть Telegram Premium.
 // Получить emoji_id: перешли нужный эмодзи боту @idstickerbot
 // Замени ID ниже на свои — сейчас стоят популярные публичные паки.
-// ID ниже — плейсхолдеры; заменить на реальные custom_emoji_id
-// (пользователь пришлёт). Фоллбэк-эмодзи внутри тега виден всем без Premium.
+// Премиум-эмодзи. Фоллбэк внутри тега виден тем, у кого нет Premium.
 const E = {
-  hello:    `<tg-emoji emoji-id="PLACEHOLDER_HELLO">🤝</tg-emoji>`,
-  news:     `<tg-emoji emoji-id="PLACEHOLDER_NEWS">🍉</tg-emoji>`,
-  history:  `<tg-emoji emoji-id="PLACEHOLDER_HISTORY">🏛</tg-emoji>`,
-  question: `<tg-emoji emoji-id="PLACEHOLDER_QUESTION">🤔</tg-emoji>`,
-  tea:      `<tg-emoji emoji-id="PLACEHOLDER_TEA">🫖</tg-emoji>`,
-  lock:     `<tg-emoji emoji-id="PLACEHOLDER_LOCK">🔐</tg-emoji>`,
+  hello:    `<tg-emoji emoji-id="5192822796115256248">😍</tg-emoji>`,
+  news:     `<tg-emoji emoji-id="5474632681490753024">🇷🇺</tg-emoji>`,
+  history:  `<tg-emoji emoji-id="5424656265940846126">😀</tg-emoji>`,
+  question: `<tg-emoji emoji-id="5449694349023519633">👨‍💻</tg-emoji>`,
+  tea:      `<tg-emoji emoji-id="5408949445985312258">🌮</tg-emoji>`,
+  lock:     `<tg-emoji emoji-id="5449694349023519633">👨‍💻</tg-emoji>`,
 };
 
 const WELCOME = (name: string) => `<b>Привет, ${name}!</b>${E.hello}
@@ -91,35 +90,11 @@ async function processUpdate(update: any) {
     return;
   }
 
-  // ВРЕМЕННЫЙ РЕЖИМ СБОРА ЭМОДЗИ: ответы AI отключены.
-  // Бот на любое сообщение показывает custom_emoji_id премиум-эмодзи в нём.
-  // Когда ID собраны — убрать блок до "// КОНЕЦ ВРЕМЕННОГО РЕЖИМА".
-  {
-    const entities: any[] = message.entities ?? [];
-    const ids = entities
-      .filter((e: any) => e.type === "custom_emoji")
-      .map((e: any) => {
-        const fallback = text.slice(e.offset, e.offset + e.length);
-        return `${fallback} — <code>${e.custom_emoji_id}</code>`;
-      })
-      .join("\n");
-    await sendMessage(
-      chatId,
-      ids
-        ? `Найденные emoji_id:\n${ids}`
-        : "Пришли сообщение с премиум-эмодзи — покажу их ID. (Ответы AI временно отключены.)"
-    );
-    return;
-  }
-  // КОНЕЦ ВРЕМЕННОГО РЕЖИМА
-  // Когда режим сбора эмодзи больше не нужен — удалить блок выше
-  // и раскомментировать ответы AI:
-  //
-  // await sendChatAction(chatId);
-  // pushHistory(chatId, { role: "user", content: text });
-  // const answer = await askGroq(getHistory(chatId));
-  // pushHistory(chatId, { role: "assistant", content: answer });
-  // await sendMessage(chatId, answer, { parse_mode: undefined });
+  await sendChatAction(chatId);
+  pushHistory(chatId, { role: "user", content: text });
+  const answer = await askGroq(getHistory(chatId));
+  pushHistory(chatId, { role: "assistant", content: answer });
+  await sendMessage(chatId, answer, { parse_mode: undefined });
 }
 
 export async function POST(req: NextRequest) {
