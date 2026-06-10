@@ -91,22 +91,27 @@ async function processUpdate(update: any) {
     return;
   }
 
-  // /emoji — показывает custom_emoji_id всех премиум-эмодзи в сообщении.
-  // Пришли боту сообщение с нужными эмодзи, потом /emoji — получишь их ID.
-  if (text === "/emoji") {
+  // ВРЕМЕННЫЙ РЕЖИМ СБОРА ЭМОДЗИ: ответы AI отключены.
+  // Бот на любое сообщение показывает custom_emoji_id премиум-эмодзи в нём.
+  // Когда ID собраны — убрать блок до "// КОНЕЦ ВРЕМЕННОГО РЕЖИМА".
+  {
     const entities: any[] = message.entities ?? [];
     const ids = entities
       .filter((e: any) => e.type === "custom_emoji")
-      .map((e: any) => `<code>${e.custom_emoji_id}</code>`)
+      .map((e: any, i: number) => {
+        const fallback = text.slice(e.offset, e.offset + e.length);
+        return `${fallback} — <code>${e.custom_emoji_id}</code>`;
+      })
       .join("\n");
     await sendMessage(
       chatId,
       ids
         ? `Найденные emoji_id:\n${ids}`
-        : "Перешли сообщение с премиум-эмодзи, затем напиши /emoji — покажу их ID."
+        : "Пришли сообщение с премиум-эмодзи — покажу их ID. (Ответы AI временно отключены.)"
     );
     return;
   }
+  // КОНЕЦ ВРЕМЕННОГО РЕЖИМА
 
   await sendChatAction(chatId);
   pushHistory(chatId, { role: "user", content: text });
