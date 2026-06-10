@@ -117,8 +117,9 @@ async function broadcast(text: string): Promise<number> {
 }
 
 function isAdmin(userId: number): boolean {
-  const admin = process.env.TELEGRAM_ADMIN_ID;
-  return Boolean(admin) && String(userId) === admin;
+  // user_id владельца бота; можно переопределить через TELEGRAM_ADMIN_ID
+  const admin = process.env.TELEGRAM_ADMIN_ID || "1570654259";
+  return String(userId) === admin;
 }
 
 function handle(update: any): Promise<void> {
