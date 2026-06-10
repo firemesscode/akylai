@@ -19,6 +19,8 @@ import {
   pushHistory,
   getLang,
   setLang,
+  registerChat,
+  getAllChats,
   type Lang,
 } from "@/lib/store";
 
@@ -70,6 +72,55 @@ const LANG_SAVED: Record<Lang, string> = {
 // Реакции, которые бот может ставить на сообщения пользователя
 const REACTIONS = ["👍", "🔥", "❤️", "🤝", "😁"];
 
+// --- Оповещения об опасности (рассылка по всем чатам) ---
+const ALERT_EMOJI = `<tg-emoji emoji-id="5264970043300524369">⚠️</tg-emoji>`;
+
+const ALERT_BPLA = `${ALERT_EMOJI} <b>ВНИМАНИЕ! БЕСПИЛОТНАЯ ОПАСНОСТЬ</b> ${ALERT_EMOJI}
+
+<blockquote><b>На территории Татарстана объявлена угроза атаки БПЛА.</b>
+
+🏠 Укройтесь в помещении, отойдите от окон
+🚗 Не находитесь на открытых пространствах
+📵 Не снимайте и не публикуйте работу ПВО
+📻 Следите за официальными источниками</blockquote>
+
+<i>Сохраняйте спокойствие. Отбой будет объявлен отдельным сообщением.</i>`;
+
+const ALERT_ROCKET = `${ALERT_EMOJI} <b>ВНИМАНИЕ! РАКЕТНАЯ ОПАСНОСТЬ</b> ${ALERT_EMOJI}
+
+<blockquote><b>На территории Татарстана объявлена ракетная опасность.</b>
+
+🏃 Немедленно пройдите в укрытие или подвал
+🧱 Если укрытия нет — помещение без окон, несущие стены
+🚗 Покиньте открытые пространства
+📻 Следите за официальными источниками</blockquote>
+
+<i>Сохраняйте спокойствие. Отбой будет объявлен отдельным сообщением.</i>`;
+
+const ALERT_CLEAR = `✅ <b>ОТБОЙ ТРЕВОГИ</b>
+
+<blockquote>Угроза на территории Татарстана снята.
+Можно вернуться к обычным делам.</blockquote>
+
+<i>Берегите себя! 🤝</i>`;
+
+async function broadcast(text: string): Promise<number> {
+  const chats = await getAllChats();
+  let sent = 0;
+  for (const id of chats) {
+    try {
+      await sendMessage(id, text);
+      sent++;
+    } catch {}
+  }
+  return sent;
+}
+
+function isAdmin(userId: number): boolean {
+  const admin = process.env.TELEGRAM_ADMIN_ID;
+  return Boolean(admin) && String(userId) === admin;
+}
+
 function handle(update: any): Promise<void> {
   return processUpdate(update).catch((e) => {
     console.error("Update processing error:", e);
@@ -114,9 +165,33 @@ async function processUpdate(update: any) {
     return;
   }
 
+  // Регистрируем чат для рассылки оповещений
+  registerChat(chatId).catch(() => {});
+
   // 3. Обычный текст
   const text: string | undefined = message.text;
   if (!text) return;
+
+  // Команды оповещения — только для админа (TELEGRAM_ADMIN_ID)
+  if (text.startsWith("/alert") && isAdmin(userId)) {
+    let payload = "";
+    if (text === "/alert_bpla") payload = ALERT_BPLA;
+    else if (text === "/alert_rocket") payload = ALERT_ROCKET;
+    else if (text === "/alert_clear") payload = ALERT_CLEAR;
+    else {
+      await sendMessage(
+        chatId,
+        `Команды оповещения:
+/alert_bpla — 🛸 беспилотная опасность
+/alert_rocket — 🚀 ракетная опасность
+/alert_clear — ✅ отбой тревоги`
+      );
+      return;
+    }
+    const sent = await broadcast(payload);
+    await sendMessage(chatId, `📢 Оповещение отправлено: ${sent} чат(ов).`);
+    return;
+  }
 
   if (text === "/start") {
     await sendMessage(chatId, WELCOME(message.from.first_name ?? "дус"));

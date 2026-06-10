@@ -33,6 +33,24 @@ async function redis(cmd: (string | number)[]): Promise<any> {
 const memVerified = new Set<number>();
 const memLang = new Map<number, Lang>();
 const memHistories = new Map<number, ChatMessage[]>();
+const memChats = new Set<number>();
+
+// Реестр чатов для рассылки оповещений (тревога БПЛА/ракетная)
+export async function registerChat(chatId: number): Promise<void> {
+  if (hasRedis) {
+    await redis(["SADD", "chats", String(chatId)]);
+    return;
+  }
+  memChats.add(chatId);
+}
+
+export async function getAllChats(): Promise<number[]> {
+  if (hasRedis) {
+    const res = await redis(["SMEMBERS", "chats"]);
+    return Array.isArray(res) ? res.map(Number) : [];
+  }
+  return [...memChats];
+}
 
 export async function isVerified(userId: number): Promise<boolean> {
   if (hasRedis) return (await redis(["GET", `verified:${userId}`])) === "1";
