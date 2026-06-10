@@ -98,7 +98,7 @@ async function processUpdate(update: any) {
     const entities: any[] = message.entities ?? [];
     const ids = entities
       .filter((e: any) => e.type === "custom_emoji")
-      .map((e: any, i: number) => {
+      .map((e: any) => {
         const fallback = text.slice(e.offset, e.offset + e.length);
         return `${fallback} — <code>${e.custom_emoji_id}</code>`;
       })
@@ -112,12 +112,14 @@ async function processUpdate(update: any) {
     return;
   }
   // КОНЕЦ ВРЕМЕННОГО РЕЖИМА
-
-  await sendChatAction(chatId);
-  pushHistory(chatId, { role: "user", content: text });
-  const answer = await askGroq(getHistory(chatId));
-  pushHistory(chatId, { role: "assistant", content: answer });
-  await sendMessage(chatId, answer, { parse_mode: undefined });
+  // Когда режим сбора эмодзи больше не нужен — удалить блок выше
+  // и раскомментировать ответы AI:
+  //
+  // await sendChatAction(chatId);
+  // pushHistory(chatId, { role: "user", content: text });
+  // const answer = await askGroq(getHistory(chatId));
+  // pushHistory(chatId, { role: "assistant", content: answer });
+  // await sendMessage(chatId, answer, { parse_mode: undefined });
 }
 
 export async function POST(req: NextRequest) {
