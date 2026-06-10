@@ -139,25 +139,22 @@ export async function answerCallback(callbackQueryId: string, text?: string) {
 }
 
 // Конвертация markdown от LLM в HTML Telegram
+// Модель пишет HTML-теги напрямую (<b>, <i>, <code> и т.д.).
+// Эта функция только чистит мусор и конвертирует остатки markdown.
 export function mdToHtml(s: string): string {
-  // Убираем цифровые сноски [1], [2][3] (артефакты Tavily/поиска)
-  let t = s.replace(/\[\d+\]/g, "");
-  // Экранируем HTML-спецсимволы
-  t = t
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  // Блоки кода
-  t = t.replace(/```[\w]*\n?([\s\S]+?)```/g, "<pre>$1</pre>");
-  t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-  // Жирный / курсив
-  t = t.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-  t = t.replace(/__(.+?)__/g, "<i>$1</i>");
-  // Заголовки → жирный
-  t = t.replace(/^#{1,6}\s*(.+)$/gm, "<b>$1</b>");
-  // Маркированные списки (* / - в начале строки) → красивый символ
-  t = t.replace(/^[ \t]*[\*\-]\s+/gm, "🔹 ");
-  return t;
+  let t = s;
+  // Убираем цифровые сноски [1][2] (артефакты Tavily)
+  t = t.replace(/\[\d+\]/g, "");
+  // Конвертируем остаточный markdown (если модель всё же вставила)
+  t = t.replace(/\*\*(.+?)\*\*/gs, "<b>$1</b>");
+  t = t.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
+  // * пункт и - пункт → эмодзи (только если не внутри тега)
+  t = t.replace(/^[ \t]*[*\-]\s+/gm, "🔹 ");
+  // Убираем одиночные * и _ которые не являются тегами
+  t = t.replace(/(?<![*])\*(?![*])/g, "");
+  // Лишние пустые строки (больше двух подряд) → одна пустая
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t.trim();
 }
 
 // Российские номера: +7XXXXXXXXXX, 7XXXXXXXXXX или 8XXXXXXXXXX (11 цифр)
