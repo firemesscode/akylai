@@ -15,31 +15,28 @@ export const maxDuration = 60;
 // Работают только если у владельца бота есть Telegram Premium.
 // Получить emoji_id: перешли нужный эмодзи боту @idstickerbot
 // Замени ID ниже на свои — сейчас стоят популярные публичные паки.
+// ID ниже — плейсхолдеры; заменить на реальные custom_emoji_id
+// (пользователь пришлёт). Фоллбэк-эмодзи внутри тега виден всем без Premium.
 const E = {
-  star:    `<tg-emoji emoji-id="5368324170671202286">⭐</tg-emoji>`,
-  fire:    `<tg-emoji emoji-id="5188311512791393083">🔥</tg-emoji>`,
-  gem:     `<tg-emoji emoji-id="5471952986970267163">💎</tg-emoji>`,
-  wave:    `<tg-emoji emoji-id="5373141891321699086">👋</tg-emoji>`,
-  robot:   `<tg-emoji emoji-id="5350537653374174062">🤖</tg-emoji>`,
-  mosque:  `<tg-emoji emoji-id="5372981976804366741">🕌</tg-emoji>`,
-  news:    `<tg-emoji emoji-id="5379748062124056898">📰</tg-emoji>`,
-  chat:    `<tg-emoji emoji-id="5373168472843038101">💬</tg-emoji>`,
-  check:   `<tg-emoji emoji-id="5379748062124056900">✅</tg-emoji>`,
-  lock:    `<tg-emoji emoji-id="5373141891321699001">🔐</tg-emoji>`,
+  hello:    `<tg-emoji emoji-id="PLACEHOLDER_HELLO">🤝</tg-emoji>`,
+  news:     `<tg-emoji emoji-id="PLACEHOLDER_NEWS">🍉</tg-emoji>`,
+  history:  `<tg-emoji emoji-id="PLACEHOLDER_HISTORY">🏛</tg-emoji>`,
+  question: `<tg-emoji emoji-id="PLACEHOLDER_QUESTION">🤔</tg-emoji>`,
+  tea:      `<tg-emoji emoji-id="PLACEHOLDER_TEA">🫖</tg-emoji>`,
+  lock:     `<tg-emoji emoji-id="PLACEHOLDER_LOCK">🔐</tg-emoji>`,
 };
 
-const WELCOME = (name: string) => `${E.star}<b> Сәлам, ${name}!</b> ${E.star}
+const WELCOME = (name: string) => `<b>Привет, ${name}!</b>${E.hello}
 
-${E.robot} Я — <b>AkylBot</b>, AI-ассистент медиа
-<b>«Тимур и команда»</b> из Татарстана 🇷🇺
+Я — бот акыл, созданный медиа СМИ "Тимур и команда" специально для Татарстана
 
-<blockquote>${E.mosque} Культура и история Татарстана
-${E.news} Новости и жизнь республики
-${E.chat} Говорю на русском и татарском</blockquote>
+<blockquote>${E.news} Новости Татарстана и Казани
+${E.history} История и культура
+${E.question} Интересные вопросы</blockquote>
 
-${E.fire} Спрашивай что угодно — отвечу как друг, а не как робот!`;
+Расскажу отвечу обо всем из этого списка, задай вопрос...${E.tea}`;
 
-const ASK_CONTACT = `${E.wave} <b>Привет!</b>
+const ASK_CONTACT = `${E.hello} <b>Привет!</b>
 
 ${E.lock} Перед входом — быстрая проверка.
 Нажми кнопку ниже, чтобы поделиться номером.
