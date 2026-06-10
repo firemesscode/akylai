@@ -1,20 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { askGroq } from "@/lib/groq";
+import { askGroqStream } from "@/lib/groq";
 import {
   sendMessage,
   sendContactRequest,
   removeKeyboard,
   sendChatAction,
+  sendMessageReturnId,
+  editMessage,
+  setReaction,
+  answerCallback,
+  mdToHtml,
   isRussianPhone,
 } from "@/lib/telegram";
-import { isVerified, markVerified, getHistory, pushHistory } from "@/lib/store";
+import {
+  isVerified,
+  markVerified,
+  getHistory,
+  pushHistory,
+  getLang,
+  setLang,
+  type Lang,
+} from "@/lib/store";
 
 export const maxDuration = 60;
 
-// Премиум-эмодзи через <tg-emoji emoji-id="...">фоллбэк</tg-emoji>
-// Работают только если у владельца бота есть Telegram Premium.
-// Получить emoji_id: перешли нужный эмодзи боту @idstickerbot
-// Замени ID ниже на свои — сейчас стоят популярные публичные паки.
 // Премиум-эмодзи. Фоллбэк внутри тега виден тем, у кого нет Premium.
 const E = {
   hello:    `<tg-emoji emoji-id="5192822796115256248">😍</tg-emoji>`,
@@ -33,7 +42,9 @@ const WELCOME = (name: string) => `<b>Привет, ${name}!</b>${E.hello}
 ${E.history} История и культура
 ${E.question} Интересные вопросы</blockquote>
 
-Расскажу отвечу обо всем из этого списка, задай вопрос...${E.tea}`;
+Расскажу отвечу обо всем из этого списка, задай вопрос...${E.tea}
+
+⚙️ Язык ответов: /settings`;
 
 const ASK_CONTACT = `${E.hello} <b>Привет!</b>
 
@@ -43,6 +54,22 @@ ${E.lock} Перед входом — быстрая проверка.
 <blockquote>Доступ открыт для российских номеров (+7).
 Контакт используется только для верификации.</blockquote>`;
 
+// Плейсхолдер «отвечаю» на языке пользователя
+const TYPING: Record<Lang, string> = {
+  ru: "✍️ Отвечаю...",
+  tt: "✍️ Җавап язам...",
+  en: "✍️ Typing...",
+};
+
+const LANG_SAVED: Record<Lang, string> = {
+  ru: "✅ Готово! Теперь отвечаю на русском.",
+  tt: "✅ Булды! Хәзер татарча җавап бирәм.",
+  en: "✅ Done! I'll reply in English now.",
+};
+
+// Реакции, которые бот может ставить на сообщения пользователя
+const REACTIONS = ["👍", "🔥", "❤️", "🤝", "😁"];
+
 function handle(update: any): Promise<void> {
   return processUpdate(update).catch((e) => {
     console.error("Update processing error:", e);
@@ -50,6 +77,12 @@ function handle(update: any): Promise<void> {
 }
 
 async function processUpdate(update: any) {
+  // Нажатие inline-кнопки (настройки языка)
+  if (update.callback_query) {
+    await handleCallback(update.callback_query);
+    return;
+  }
+
   const message = update.message;
   if (!message) return;
 
@@ -64,7 +97,7 @@ async function processUpdate(update: any) {
       return;
     }
     if (isRussianPhone(message.contact.phone_number)) {
-      markVerified(userId);
+      await markVerified(userId);
       await removeKeyboard(chatId, WELCOME(message.from.first_name ?? "дус"));
     } else {
       await removeKeyboard(
@@ -76,12 +109,12 @@ async function processUpdate(update: any) {
   }
 
   // 2. Не верифицирован — просим контакт
-  if (!isVerified(userId)) {
+  if (!(await isVerified(userId))) {
     await sendContactRequest(chatId, ASK_CONTACT);
     return;
   }
 
-  // 3. Обычный текст — отвечаем через Groq
+  // 3. Обычный текст
   const text: string | undefined = message.text;
   if (!text) return;
 
@@ -90,11 +123,74 @@ async function processUpdate(update: any) {
     return;
   }
 
+  if (text === "/settings") {
+    await sendMessage(chatId, "⚙️ <b>Настройки</b>\n\nНа каком языке отвечать?", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🇷🇺 Русский", callback_data: "lang:ru" },
+            { text: "🌙 Татарча", callback_data: "lang:tt" },
+            { text: "🇬🇧 English", callback_data: "lang:en" },
+          ],
+        ],
+      },
+    });
+    return;
+  }
+
+  const lang = await getLang(chatId);
+
+  // Иногда бот реагирует на сообщение эмодзи (не блокируем основной поток)
+  if (Math.random() < 0.3 && message.message_id) {
+    setReaction(
+      chatId,
+      message.message_id,
+      REACTIONS[Math.floor(Math.random() * REACTIONS.length)]
+    ).catch(() => {});
+  }
+
+  // Мгновенный плейсхолдер, затем плавное дописывание через editMessageText
   await sendChatAction(chatId);
-  pushHistory(chatId, { role: "user", content: text });
-  const answer = await askGroq(getHistory(chatId));
-  pushHistory(chatId, { role: "assistant", content: answer });
-  await sendMessage(chatId, answer, { parse_mode: undefined });
+  const placeholderId = await sendMessageReturnId(chatId, TYPING[lang]);
+
+  await pushHistory(chatId, { role: "user", content: text });
+  const history = await getHistory(chatId);
+
+  const answer = await askGroqStream(history, lang, async (partial) => {
+    if (placeholderId) {
+      // Промежуточные версии шлём без HTML (текст ещё может быть оборван)
+      await editMessage(chatId, placeholderId, partial + " ▌");
+    }
+  });
+
+  await pushHistory(chatId, { role: "assistant", content: answer });
+
+  // Финальная версия: markdown от модели конвертируем в HTML
+  const pretty = mdToHtml(answer);
+  if (placeholderId) {
+    await editMessage(chatId, placeholderId, pretty, true);
+  } else {
+    await sendMessage(chatId, pretty);
+  }
+}
+
+async function handleCallback(cq: any) {
+  const data: string = cq.data ?? "";
+  const chatId: number | undefined = cq.message?.chat?.id;
+  const messageId: number | undefined = cq.message?.message_id;
+
+  if (data.startsWith("lang:") && chatId) {
+    const lang = data.slice(5) as Lang;
+    if (lang === "ru" || lang === "tt" || lang === "en") {
+      await setLang(chatId, lang);
+      await answerCallback(cq.id);
+      if (messageId) {
+        await editMessage(chatId, messageId, LANG_SAVED[lang]);
+      }
+      return;
+    }
+  }
+  await answerCallback(cq.id);
 }
 
 export async function POST(req: NextRequest) {
