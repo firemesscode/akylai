@@ -1,4 +1,5 @@
 import type { Lang } from "./store";
+import { webSearch, needsSearch, formatResults } from "./search";
 
 // OpenRouter — один API-ключ, 28+ бесплатных моделей, автопереключение.
 // Ключ: openrouter.ai → Keys → Create Key (карта не нужна).
@@ -144,9 +145,19 @@ export async function askGroqStream(
   lang: Lang,
   onPartial: (text: string) => Promise<void>
 ): Promise<string> {
+  // Если вопрос про свежие события — ищем через Tavily и добавляем в контекст
+  const lastUserMsg = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+  let searchSnippet = "";
+  if (needsSearch(lastUserMsg)) {
+    const results = await webSearch(lastUserMsg);
+    searchSnippet = formatResults(results);
+  }
+
   for (const cfg of MODELS) {
+    const sysContent = systemPrompt(lang, !!searchSnippet || cfg.search) +
+      (searchSnippet ? `\n\n${searchSnippet}` : "");
     const messages = [
-      { role: "system", content: systemPrompt(lang, cfg.search) },
+      { role: "system", content: sysContent },
       ...history,
     ];
 
