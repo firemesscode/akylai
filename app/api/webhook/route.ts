@@ -204,6 +204,15 @@ async function processUpdate(update: any) {
     ).catch(() => {});
   }
 
+  // Новостной запрос: сразу шлём картинку, потом думаем
+  let newsPhotoId: string | null = null;
+  if (isNewsQuery) {
+    newsPhotoId = await kvGet("news_photo");
+    if (newsPhotoId) {
+      await sendPhoto(chatId, newsPhotoId);
+    }
+  }
+
   // Мгновенный плейсхолдер, затем плавное дописывание через editMessageText
   await sendChatAction(chatId);
   const placeholderId = await sendMessageReturnId(chatId, TYPING[lang]);
@@ -220,18 +229,6 @@ async function processUpdate(update: any) {
   await pushHistory(chatId, { role: "assistant", content: answer });
 
   const pretty = mdToHtml(answer);
-
-  // Новостной запрос: удаляем плейсхолдер и шлём фото с текстом как подписью
-  if (isNewsQuery) {
-    const photoId = await kvGet("news_photo");
-    if (photoId && placeholderId) {
-      // Удаляем «Отвечаю...» и отправляем фото + текст одним сообщением
-      await editMessage(chatId, placeholderId, "​"); // невидимый символ
-      await sendPhoto(chatId, photoId, pretty.slice(0, 1024));
-      return;
-    }
-  }
-
   if (placeholderId) {
     await editMessage(chatId, placeholderId, pretty, true);
   } else {
