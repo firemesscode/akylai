@@ -11,24 +11,41 @@ import { isVerified, markVerified, getHistory, pushHistory } from "@/lib/store";
 
 export const maxDuration = 60;
 
-// Премиум-эмодзи (tg-emoji) отображаются, только если у владельца бота
-// есть Telegram Premium; для остальных показывается обычный эмодзи-фоллбэк.
-const WELCOME = (name: string) => `<b>✨ Сәлам, ${name}! ✨</b>
+// Премиум-эмодзи через <tg-emoji emoji-id="...">фоллбэк</tg-emoji>
+// Работают только если у владельца бота есть Telegram Premium.
+// Получить emoji_id: перешли нужный эмодзи боту @idstickerbot
+// Замени ID ниже на свои — сейчас стоят популярные публичные паки.
+const E = {
+  star:    `<tg-emoji emoji-id="5368324170671202286">⭐</tg-emoji>`,
+  fire:    `<tg-emoji emoji-id="5188311512791393083">🔥</tg-emoji>`,
+  gem:     `<tg-emoji emoji-id="5471952986970267163">💎</tg-emoji>`,
+  wave:    `<tg-emoji emoji-id="5373141891321699086">👋</tg-emoji>`,
+  robot:   `<tg-emoji emoji-id="5350537653374174062">🤖</tg-emoji>`,
+  mosque:  `<tg-emoji emoji-id="5372981976804366741">🕌</tg-emoji>`,
+  news:    `<tg-emoji emoji-id="5379748062124056898">📰</tg-emoji>`,
+  chat:    `<tg-emoji emoji-id="5373168472843038101">💬</tg-emoji>`,
+  check:   `<tg-emoji emoji-id="5379748062124056900">✅</tg-emoji>`,
+  lock:    `<tg-emoji emoji-id="5373141891321699001">🔐</tg-emoji>`,
+};
 
-Я — <b>AkylBot</b> 🤖, AI-ассистент медиа <b>«Тимур и команда»</b> из Татарстана 🇷🇺
+const WELCOME = (name: string) => `${E.star}<b> Сәлам, ${name}!</b> ${E.star}
 
-<blockquote>🕌 Культура и история Татарстана
-📰 Новости и жизнь республики
-💬 Говорю на русском и татарском</blockquote>
+${E.robot} Я — <b>AkylBot</b>, AI-ассистент медиа
+<b>«Тимур и команда»</b> из Татарстана 🇷🇺
 
-Спрашивай что угодно — отвечу как друг, а не как робот 😉`;
+<blockquote>${E.mosque} Культура и история Татарстана
+${E.news} Новости и жизнь республики
+${E.chat} Говорю на русском и татарском</blockquote>
 
-const ASK_CONTACT = `<b>👋 Привет!</b>
+${E.fire} Спрашивай что угодно — отвечу как друг, а не как робот!`;
 
-Чтобы начать, подтверди номер телефона — нажми кнопку
-<b>«📱 Поделиться контактом»</b> ниже.
+const ASK_CONTACT = `${E.wave} <b>Привет!</b>
 
-<i>Доступ открыт для российских номеров (+7).</i>`;
+${E.lock} Перед входом — быстрая проверка.
+Нажми кнопку ниже, чтобы поделиться номером.
+
+<blockquote>Доступ открыт для российских номеров (+7).
+Контакт используется только для верификации.</blockquote>`;
 
 function handle(update: any): Promise<void> {
   return processUpdate(update).catch((e) => {
