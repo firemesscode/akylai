@@ -114,7 +114,7 @@ export async function setReaction(chatId: number, messageId: number, emoji: stri
   });
 }
 
-// Фото по file_id (или URL) с подписью
+// Фото по file_id с подписью (caption до 1024 символов)
 export async function sendPhoto(
   chatId: number,
   photo: string,
@@ -123,8 +123,12 @@ export async function sendPhoto(
   return call("sendPhoto", {
     chat_id: chatId,
     photo,
-    ...(caption ? { caption, parse_mode: "HTML" } : {}),
+    ...(caption ? { caption: caption.slice(0, 1024), parse_mode: "HTML" } : {}),
   });
+}
+
+export async function deleteMessage(chatId: number, messageId: number) {
+  return call("deleteMessage", { chat_id: chatId, message_id: messageId });
 }
 
 export async function answerCallback(callbackQueryId: string, text?: string) {
