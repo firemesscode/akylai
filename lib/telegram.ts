@@ -13,12 +13,28 @@ async function call(method: string, payload: Record<string, unknown>) {
   return res;
 }
 
+// Заменяет <tg-emoji ...>X</tg-emoji> на обычный эмодзи-фоллбэк X
+function stripPremiumEmoji(text: string): string {
+  return text.replace(/<tg-emoji[^>]*>(.*?)<\/tg-emoji>/g, "$1");
+}
+
+// Отправка с авто-фоллбэком: если Telegram отклонил сообщение
+// (невалидный emoji-id или у владельца бота нет Premium),
+// повторяем без премиум-эмодзи.
+async function sendWithFallback(payload: Record<string, unknown>) {
+  const res = await call("sendMessage", payload);
+  if (!res.ok && typeof payload.text === "string" && payload.text.includes("<tg-emoji")) {
+    return call("sendMessage", { ...payload, text: stripPremiumEmoji(payload.text) });
+  }
+  return res;
+}
+
 export async function sendMessage(
   chatId: number,
   text: string,
   extra: Record<string, unknown> = {}
 ) {
-  return call("sendMessage", {
+  return sendWithFallback({
     chat_id: chatId,
     text,
     parse_mode: "HTML",
@@ -28,7 +44,7 @@ export async function sendMessage(
 
 // Клавиатура с кнопкой "Поделиться контактом" для верификации номера
 export async function sendContactRequest(chatId: number, text: string) {
-  return call("sendMessage", {
+  return sendWithFallback({
     chat_id: chatId,
     text,
     parse_mode: "HTML",
@@ -41,7 +57,7 @@ export async function sendContactRequest(chatId: number, text: string) {
 }
 
 export async function removeKeyboard(chatId: number, text: string) {
-  return call("sendMessage", {
+  return sendWithFallback({
     chat_id: chatId,
     text,
     parse_mode: "HTML",
