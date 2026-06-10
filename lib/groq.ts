@@ -1,11 +1,24 @@
 import Groq from "groq-sdk";
 import type { Lang } from "./store";
 
-// qwen3-32b: лимит gpt-oss-120b исчерпан. У qwen нет browser_search,
-// поэтому поиск отключён (SUPPORTS_SEARCH). reasoning_format: "hidden"
-// прячет <think>-размышления модели из ответа.
-const MODEL = "qwen/qwen3-32b";
-const SUPPORTS_SEARCH = false;
+// Каскад моделей: если модель недоступна (кончился лимит, 429/5xx) —
+// автоматически пробуем следующую. Первая в списке — основная.
+type ModelCfg = {
+  id: string;
+  search: boolean;        // умеет ли искать в интернете
+  browserTool?: boolean;  // нужен ли явный tools: browser_search (gpt-oss)
+  hideReasoning?: boolean; // прятать <think> (qwen)
+};
+
+const MODELS: ModelCfg[] = [
+  // агентная система Groq: веб-поиск и код встроены, ничего передавать не надо
+  { id: "groq/compound", search: true },
+  // gpt-oss: поиск через явный browser_search
+  { id: "openai/gpt-oss-120b", search: true, browserTool: true },
+  // запасные без поиска
+  { id: "llama-3.3-70b-versatile", search: false },
+  { id: "qwen/qwen3-32b", search: false, hideReasoning: true },
+];
 
 const LANG_RULES: Record<Lang, string> = {
   ru: "Отвечай на русском языке. Если пользователь пишет по-татарски — отвечай по-татарски.",
@@ -16,7 +29,7 @@ const LANG_RULES: Record<Lang, string> = {
   en: "Always reply in English.",
 };
 
-export function systemPrompt(lang: Lang): string {
+export function systemPrompt(lang: Lang, search: boolean): string {
   return `Ты AkylBot — AI-ассистент медиа "Тимур и команда" из Татарстана.
 Знаешь культуру, историю, новости и жизнь Татарстана: Казань, татарский язык,
 Сабантуй, эчпочмак и чак-чак, Тукай и Джалиль, КАМАЗ и Иннополис.
@@ -24,7 +37,7 @@ export function systemPrompt(lang: Lang): string {
 
 ${LANG_RULES[lang]}
 
-${SUPPORTS_SEARCH
+${search
   ? `Если вопрос про свежие новости, события, цены, погоду или факты,
 которые могли измениться — используй поиск в интернете и отвечай
 по актуальным данным.`
@@ -54,24 +67,30 @@ function getClient(): Groq {
 
 const FAIL_TEXT = "Кичерегез! Что-то пошло не так, попробуй ещё раз 🙏";
 
-async function tryStream(
-  messages: any[],
-  withTools: boolean,
-  onPartial: (text: string) => Promise<void>
-): Promise<string> {
+function buildParams(cfg: ModelCfg, messages: any[], stream: boolean): any {
   const params: any = {
-    model: MODEL,
+    model: cfg.id,
     messages,
     max_tokens: 2048,
     temperature: 0.7,
-    stream: true,
-    reasoning_format: "hidden",
   };
-  if (withTools && SUPPORTS_SEARCH) {
+  if (stream) params.stream = true;
+  if (cfg.hideReasoning) params.reasoning_format = "hidden";
+  if (cfg.browserTool) {
     params.tools = [{ type: "browser_search" }];
     params.tool_choice = "auto";
   }
-  const stream = await getClient().chat.completions.create(params);
+  return params;
+}
+
+async function tryStream(
+  cfg: ModelCfg,
+  messages: any[],
+  onPartial: (text: string) => Promise<void>
+): Promise<string> {
+  const stream = await getClient().chat.completions.create(
+    buildParams(cfg, messages, true)
+  );
 
   let full = "";
   let lastSent = 0;
@@ -93,87 +112,64 @@ async function tryStream(
   return full.trim();
 }
 
-async function tryPlain(messages: any[], withTools: boolean): Promise<string> {
-  const params: any = {
-    model: MODEL,
-    messages,
-    max_tokens: 2048,
-    temperature: 0.7,
-    reasoning_format: "hidden",
-  };
-  if (withTools && SUPPORTS_SEARCH) {
-    params.tools = [{ type: "browser_search" }];
-    params.tool_choice = "auto";
-  }
-  const completion: any = await getClient().chat.completions.create(params);
+async function tryPlain(cfg: ModelCfg, messages: any[]): Promise<string> {
+  const completion: any = await getClient().chat.completions.create(
+    buildParams(cfg, messages, false)
+  );
   return completion.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-// Диагностика для /debug: пробует все три варианта и возвращает отчёт
-export async function debugGroq(): Promise<string> {
-  const messages: any[] = [
-    { role: "user", content: "Скажи одно слово: работаю" },
-  ];
-  const report: string[] = [];
-  report.push(`key: ${process.env.GROQ_API_KEY ? "задан (" + process.env.GROQ_API_KEY.slice(0, 7) + "...)" : "НЕ ЗАДАН!"}`);
-  report.push(`model: ${MODEL}`);
-
-  try {
-    const r = await tryPlain(messages, false);
-    report.push(`без поиска: OK — "${r.slice(0, 50)}"`);
-  } catch (e: any) {
-    report.push(`без поиска: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
-  }
-
-  try {
-    const r = await tryPlain(messages, true);
-    report.push(`с поиском: OK — "${r.slice(0, 50)}"`);
-  } catch (e: any) {
-    report.push(`с поиском: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
-  }
-
-  try {
-    const r = await tryStream(messages, true, async () => {});
-    report.push(`стрим+поиск: OK — "${r.slice(0, 50)}"`);
-  } catch (e: any) {
-    report.push(`стрим+поиск: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 300)}`);
-  }
-
-  return report.join("\n\n");
-}
-
-// Цепочка фоллбэков: стрим с поиском → без стрима с поиском →
-// без поиска. Что-то из этого должно ответить.
+// Каскад: для каждой модели пробуем стрим, затем без стрима;
+// при любой ошибке (лимит, недоступность) переходим к следующей.
 export async function askGroqStream(
   history: ChatMessage[],
   lang: Lang,
   onPartial: (text: string) => Promise<void>
 ): Promise<string> {
-  const messages = [
-    { role: "system", content: systemPrompt(lang) },
-    ...history,
-  ];
+  for (const cfg of MODELS) {
+    const messages = [
+      { role: "system", content: systemPrompt(lang, cfg.search) },
+      ...history,
+    ];
 
-  try {
-    const r = await tryStream(messages, true, onPartial);
-    if (r) return r;
-  } catch (e) {
-    console.error("Groq stream+tools failed:", e);
-  }
+    try {
+      const r = await tryStream(cfg, messages, onPartial);
+      if (r) return r;
+    } catch (e) {
+      console.error(`Groq stream failed (${cfg.id}):`, e);
+    }
 
-  try {
-    const r = await tryPlain(messages, true);
-    if (r) return r;
-  } catch (e) {
-    console.error("Groq plain+tools failed:", e);
-  }
-
-  try {
-    const r = await tryPlain(messages, false);
-    if (r) return r;
-  } catch (e) {
-    console.error("Groq plain failed:", e);
+    try {
+      const r = await tryPlain(cfg, messages);
+      if (r) return r;
+    } catch (e) {
+      console.error(`Groq plain failed (${cfg.id}):`, e);
+    }
   }
 
   return FAIL_TEXT;
+}
+
+// Диагностика для /debug: статус каждой модели каскада
+export async function debugGroq(): Promise<string> {
+  const report: string[] = [];
+  report.push(
+    `key: ${process.env.GROQ_API_KEY ? "задан (" + process.env.GROQ_API_KEY.slice(0, 7) + "...)" : "НЕ ЗАДАН!"}`
+  );
+
+  for (const cfg of MODELS) {
+    const messages: any[] = [
+      { role: "user", content: "Скажи одно слово: работаю" },
+    ];
+    try {
+      const r = await tryPlain(cfg, messages);
+      report.push(`${cfg.id}: OK — "${r.slice(0, 40)}"`);
+    } catch (e: any) {
+      report.push(
+        `${cfg.id}: ОШИБКА — ${e?.status ?? ""} ${String(e?.message ?? e).slice(0, 200)}`
+      );
+    }
+  }
+
+  return report.join("\n\n");
 }
