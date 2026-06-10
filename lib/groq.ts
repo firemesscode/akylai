@@ -45,24 +45,25 @@ function getClient(): Groq {
   return client;
 }
 
-// Стриминг: onPartial вызывается по мере прихода текста,
-// возвращается полный ответ.
-export async function askGroqStream(
-  history: ChatMessage[],
-  lang: Lang,
+const FAIL_TEXT = "Кичерегез! Что-то пошло не так, попробуй ещё раз 🙏";
+
+async function tryStream(
+  messages: any[],
+  withTools: boolean,
   onPartial: (text: string) => Promise<void>
 ): Promise<string> {
-  const stream = await getClient().chat.completions.create({
+  const params: any = {
     model: MODEL,
-    messages: [{ role: "system", content: systemPrompt(lang) }, ...history],
+    messages,
     max_tokens: 2048,
     temperature: 0.7,
     stream: true,
-    // Встроенный серверный инструмент Groq: модель сама решает,
-    // когда искать в интернете.
-    tools: [{ type: "browser_search" } as any],
-    tool_choice: "auto",
-  } as any);
+  };
+  if (withTools) {
+    params.tools = [{ type: "browser_search" }];
+    params.tool_choice = "auto";
+  }
+  const stream = await getClient().chat.completions.create(params);
 
   let full = "";
   let lastSent = 0;
@@ -73,8 +74,7 @@ export async function askGroqStream(
     if (typeof delta === "string" && delta) {
       full += delta;
       const now = Date.now();
-      // Плавное дописывание: редактируем сообщение не чаще раза в ~1.5 сек
-      // и только если накопилось заметно нового текста (лимиты Telegram).
+      // Плавное дописывание: не чаще раза в ~1.5 сек (лимиты Telegram)
       if (now - lastTime > 1500 && full.length - lastSent > 60) {
         lastTime = now;
         lastSent = full.length;
@@ -82,6 +82,56 @@ export async function askGroqStream(
       }
     }
   }
+  return full.trim();
+}
 
-  return full.trim() || "Кичерегез! Что-то пошло не так, попробуй ещё раз 🙏";
+async function tryPlain(messages: any[], withTools: boolean): Promise<string> {
+  const params: any = {
+    model: MODEL,
+    messages,
+    max_tokens: 2048,
+    temperature: 0.7,
+  };
+  if (withTools) {
+    params.tools = [{ type: "browser_search" }];
+    params.tool_choice = "auto";
+  }
+  const completion: any = await getClient().chat.completions.create(params);
+  return completion.choices?.[0]?.message?.content?.trim() ?? "";
+}
+
+// Цепочка фоллбэков: стрим с поиском → без стрима с поиском →
+// без поиска. Что-то из этого должно ответить.
+export async function askGroqStream(
+  history: ChatMessage[],
+  lang: Lang,
+  onPartial: (text: string) => Promise<void>
+): Promise<string> {
+  const messages = [
+    { role: "system", content: systemPrompt(lang) },
+    ...history,
+  ];
+
+  try {
+    const r = await tryStream(messages, true, onPartial);
+    if (r) return r;
+  } catch (e) {
+    console.error("Groq stream+tools failed:", e);
+  }
+
+  try {
+    const r = await tryPlain(messages, true);
+    if (r) return r;
+  } catch (e) {
+    console.error("Groq plain+tools failed:", e);
+  }
+
+  try {
+    const r = await tryPlain(messages, false);
+    if (r) return r;
+  } catch (e) {
+    console.error("Groq plain failed:", e);
+  }
+
+  return FAIL_TEXT;
 }

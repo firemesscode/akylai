@@ -44,6 +44,25 @@ export async function registerChat(chatId: number): Promise<void> {
   memChats.add(chatId);
 }
 
+// Универсальные get/set (например, id последнего поста канала-радара)
+const memKv = new Map<string, string>();
+
+export async function kvGet(key: string): Promise<string | null> {
+  if (hasRedis) {
+    const v = await redis(["GET", key]);
+    return typeof v === "string" ? v : null;
+  }
+  return memKv.get(key) ?? null;
+}
+
+export async function kvSet(key: string, value: string): Promise<void> {
+  if (hasRedis) {
+    await redis(["SET", key, value]);
+    return;
+  }
+  memKv.set(key, value);
+}
+
 export async function getAllChats(): Promise<number[]> {
   if (hasRedis) {
     const res = await redis(["SMEMBERS", "chats"]);

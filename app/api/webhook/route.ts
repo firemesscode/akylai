@@ -20,9 +20,9 @@ import {
   getLang,
   setLang,
   registerChat,
-  getAllChats,
   type Lang,
 } from "@/lib/store";
+import { ALERT_BPLA, ALERT_ROCKET, ALERT_CLEAR, broadcast } from "@/lib/alerts";
 
 export const maxDuration = 60;
 
@@ -71,50 +71,6 @@ const LANG_SAVED: Record<Lang, string> = {
 
 // Реакции, которые бот может ставить на сообщения пользователя
 const REACTIONS = ["👍", "🔥", "❤️", "🤝", "😁"];
-
-// --- Оповещения об опасности (рассылка по всем чатам) ---
-const ALERT_EMOJI = `<tg-emoji emoji-id="5264970043300524369">⚠️</tg-emoji>`;
-
-const ALERT_BPLA = `${ALERT_EMOJI} <b>ВНИМАНИЕ! БЕСПИЛОТНАЯ ОПАСНОСТЬ</b> ${ALERT_EMOJI}
-
-<blockquote><b>На территории Татарстана объявлена угроза атаки БПЛА.</b>
-
-🏠 Укройтесь в помещении, отойдите от окон
-🚗 Не находитесь на открытых пространствах
-📵 Не снимайте и не публикуйте работу ПВО
-📻 Следите за официальными источниками</blockquote>
-
-<i>Сохраняйте спокойствие. Отбой будет объявлен отдельным сообщением.</i>`;
-
-const ALERT_ROCKET = `${ALERT_EMOJI} <b>ВНИМАНИЕ! РАКЕТНАЯ ОПАСНОСТЬ</b> ${ALERT_EMOJI}
-
-<blockquote><b>На территории Татарстана объявлена ракетная опасность.</b>
-
-🏃 Немедленно пройдите в укрытие или подвал
-🧱 Если укрытия нет — помещение без окон, несущие стены
-🚗 Покиньте открытые пространства
-📻 Следите за официальными источниками</blockquote>
-
-<i>Сохраняйте спокойствие. Отбой будет объявлен отдельным сообщением.</i>`;
-
-const ALERT_CLEAR = `✅ <b>ОТБОЙ ТРЕВОГИ</b>
-
-<blockquote>Угроза на территории Татарстана снята.
-Можно вернуться к обычным делам.</blockquote>
-
-<i>Берегите себя! 🤝</i>`;
-
-async function broadcast(text: string): Promise<number> {
-  const chats = await getAllChats();
-  let sent = 0;
-  for (const id of chats) {
-    try {
-      await sendMessage(id, text);
-      sent++;
-    } catch {}
-  }
-  return sent;
-}
 
 function isAdmin(userId: number): boolean {
   // user_id владельца бота; можно переопределить через TELEGRAM_ADMIN_ID
