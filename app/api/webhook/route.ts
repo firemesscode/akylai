@@ -227,14 +227,18 @@ async function processUpdate(update: any) {
   await pushHistory(chatId, { role: "user", content: text });
   const history = await getHistory(chatId);
 
+  // Черновик и плейсхолдер — без HTML-тегов (там нет parse_mode)
+  const stripTags = (s: string) => s.replace(/<[^>]+>/g, "");
+
   const answer = await askGroqStream(history, lang, async (partial) => {
+    const visible = stripTags(partial) + " ▌";
     if (useDraft) {
-      useDraft = await sendMessageDraft(chatId, draftId, partial + " ▌");
+      useDraft = await sendMessageDraft(chatId, draftId, visible);
       if (!useDraft && !placeholderId) {
-        placeholderId = await sendMessageReturnId(chatId, partial + " ▌");
+        placeholderId = await sendMessageReturnId(chatId, visible);
       }
     } else if (placeholderId) {
-      await editMessage(chatId, placeholderId, partial + " ▌");
+      await editMessage(chatId, placeholderId, visible);
     }
   });
 
@@ -242,8 +246,12 @@ async function processUpdate(update: any) {
 
   const pretty = mdToHtml(answer);
 
+  // Убираем черновик перед финальной отправкой, чтобы не было дубля
+  if (useDraft) {
+    await sendMessageDraft(chatId, draftId, "");
+  }
+
   if (newsPhotoId) {
-    // Фото + ответ одним сообщением (черновик исчезает сам)
     if (placeholderId) await deleteMessage(chatId, placeholderId);
     await sendPhoto(chatId, newsPhotoId, pretty);
     // Если ответ длиннее 1024 символов — остаток отдельным сообщением
