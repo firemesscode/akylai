@@ -16,9 +16,11 @@ type ModelCfg = {
 };
 
 const MODELS: ModelCfg[] = [
-  // Авторотатор OpenRouter — сам выбирает лучшую доступную бесплатную модель
+  // Основная: GPT-5.3 Chat (платная — нужны кредиты на OpenRouter)
+  { id: "openai/gpt-5.3-chat", search: false },
+  // Авторотатор OpenRouter — лучшая доступная бесплатная модель
   { id: "openrouter/auto", search: false },
-  // Конкретные бесплатные модели — запасные, если авторотатор недоступен
+  // Конкретные бесплатные модели — запасные
   { id: "deepseek/deepseek-r1:free", search: false },
   { id: "meta-llama/llama-3.3-70b-instruct:free", search: false },
   { id: "qwen/qwen3-235b-a22b:free", search: false },
