@@ -246,12 +246,9 @@ async function processUpdate(update: any) {
 
   const pretty = mdToHtml(answer);
 
-  // Убираем черновик перед финальной отправкой, чтобы не было дубля
-  if (useDraft) {
-    await sendMessageDraft(chatId, draftId, "");
-  }
-
   if (newsPhotoId) {
+    // Финал — фото, оно не заменяет текстовый черновик само, чистим вручную
+    if (useDraft) await sendMessageDraft(chatId, draftId, "");
     if (placeholderId) await deleteMessage(chatId, placeholderId);
     await sendPhoto(chatId, newsPhotoId, pretty);
     // Если ответ длиннее 1024 символов — остаток отдельным сообщением
@@ -260,9 +257,12 @@ async function processUpdate(update: any) {
     }
   } else if (placeholderId) {
     await editMessage(chatId, placeholderId, pretty, true);
+  } else if (useDraft) {
+    // Обычный sendMessage бесшовно заменяет черновик финальным текстом
+    await sendMessage(chatId, pretty);
   } else {
-    // Финал: пробуем Rich Message (Bot API 10.1) — секции, футер,
-    // красивая структура; если сервер не поддерживает — обычный HTML.
+    // Без черновика: пробуем Rich Message (Bot API 10.1),
+    // при недоступности — обычный HTML.
     const rich = await sendRichMessage(chatId, answerToRichBlocks(pretty));
     if (!rich) {
       await sendMessage(chatId, pretty);
