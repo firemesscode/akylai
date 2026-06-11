@@ -6,6 +6,7 @@ import {
   removeKeyboard,
   sendChatAction,
   sendMessageReturnId,
+  sendMessageDraft,
   editMessage,
   deleteMessage,
   setReaction,
@@ -211,15 +212,27 @@ async function processUpdate(update: any) {
     ? (process.env.NEWS_PHOTO_URL ?? await kvGet("news_photo"))
     : null;
 
-  // Мгновенный плейсхолдер, затем плавное дописывание через editMessageText
+  // Стриминг: пробуем нативный sendMessageDraft (Bot API 9.5) —
+  // плавная анимация набора без лимитов editMessageText.
+  // Если не поддерживается — фоллбэк на плейсхолдер + editMessageText.
   await sendChatAction(chatId);
-  const placeholderId = await sendMessageReturnId(chatId, TYPING[lang]);
+  const draftId = message.message_id || Date.now();
+  let useDraft = await sendMessageDraft(chatId, draftId, TYPING[lang]);
+  let placeholderId: number | null = null;
+  if (!useDraft) {
+    placeholderId = await sendMessageReturnId(chatId, TYPING[lang]);
+  }
 
   await pushHistory(chatId, { role: "user", content: text });
   const history = await getHistory(chatId);
 
   const answer = await askGroqStream(history, lang, async (partial) => {
-    if (placeholderId) {
+    if (useDraft) {
+      useDraft = await sendMessageDraft(chatId, draftId, partial + " ▌");
+      if (!useDraft && !placeholderId) {
+        placeholderId = await sendMessageReturnId(chatId, partial + " ▌");
+      }
+    } else if (placeholderId) {
       await editMessage(chatId, placeholderId, partial + " ▌");
     }
   });
@@ -229,7 +242,7 @@ async function processUpdate(update: any) {
   const pretty = mdToHtml(answer);
 
   if (newsPhotoId) {
-    // Удаляем плейсхолдер и отправляем фото + ответ одним сообщением
+    // Фото + ответ одним сообщением (черновик исчезает сам)
     if (placeholderId) await deleteMessage(chatId, placeholderId);
     await sendPhoto(chatId, newsPhotoId, pretty);
     // Если ответ длиннее 1024 символов — остаток отдельным сообщением
@@ -239,6 +252,7 @@ async function processUpdate(update: any) {
   } else if (placeholderId) {
     await editMessage(chatId, placeholderId, pretty, true);
   } else {
+    // Черновик эфемерный — финал отправляем обычным сообщением
     await sendMessage(chatId, pretty);
   }
 }

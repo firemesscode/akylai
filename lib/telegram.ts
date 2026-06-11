@@ -127,6 +127,22 @@ export async function sendPhoto(
   });
 }
 
+// Нативный стриминг (Bot API 9.5): эфемерный черновик, плавно
+// анимируется при обновлениях с тем же draft_id. Финал — обычный sendMessage.
+// Возвращает true, если метод поддерживается и вызов прошёл.
+export async function sendMessageDraft(
+  chatId: number,
+  draftId: number,
+  text: string
+): Promise<boolean> {
+  const res = await call("sendMessageDraft", {
+    chat_id: chatId,
+    draft_id: draftId,
+    text,
+  });
+  return res.ok;
+}
+
 export async function deleteMessage(chatId: number, messageId: number) {
   return call("deleteMessage", { chat_id: chatId, message_id: messageId });
 }
