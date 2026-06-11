@@ -28,6 +28,7 @@ import {
   type Lang,
 } from "@/lib/store";
 import { ALERT_BPLA, ALERT_ROCKET, ALERT_CLEAR, broadcast } from "@/lib/alerts";
+import { answerToRichBlocks, sendRichMessage } from "@/lib/rich";
 
 export const maxDuration = 60;
 
@@ -252,8 +253,12 @@ async function processUpdate(update: any) {
   } else if (placeholderId) {
     await editMessage(chatId, placeholderId, pretty, true);
   } else {
-    // Черновик эфемерный — финал отправляем обычным сообщением
-    await sendMessage(chatId, pretty);
+    // Финал: пробуем Rich Message (Bot API 10.1) — секции, футер,
+    // красивая структура; если сервер не поддерживает — обычный HTML.
+    const rich = await sendRichMessage(chatId, answerToRichBlocks(pretty));
+    if (!rich) {
+      await sendMessage(chatId, pretty);
+    }
   }
 }
 
