@@ -28,7 +28,7 @@ import {
   type Lang,
 } from "@/lib/store";
 import { ALERT_BPLA, ALERT_ROCKET, ALERT_CLEAR, broadcast } from "@/lib/alerts";
-import { answerToRichBlocks, sendRichMessage } from "@/lib/rich";
+import { sendRichMessage } from "@/lib/rich";
 
 export const maxDuration = 60;
 
@@ -263,7 +263,7 @@ async function processUpdate(update: any) {
   } else {
     // Без черновика: пробуем Rich Message (Bot API 10.1),
     // при недоступности — обычный HTML.
-    const rich = await sendRichMessage(chatId, answerToRichBlocks(pretty));
+    const rich = await sendRichMessage(chatId, pretty);
     if (!rich) {
       await sendMessage(chatId, pretty);
     }

@@ -1,94 +1,56 @@
-// Rich Messages (Bot API 10.1): структурированные сообщения —
-// секции, параграфы, списки, разделители, футер.
-// Если sendRichMessage недоступен (сервер старее 10.1) — вызывающий
-// код должен фоллбэкнуться на обычный sendMessage (HTML).
+// Rich Messages (Bot API 10.1): отправка структурированного контента
+// через sendRichMessage с GFM-markdown или HTML.
+// Фоллбэк на обычный sendMessage если метод не поддерживается.
 
 const API = () =>
   `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
 
-type RichText =
-  | { type: "plain"; text: string }
-  | { type: "bold"; text: RichText }
-  | { type: "italic"; text: RichText }
-  | { type: "custom_emoji"; emoji_id: string; text: RichText }
-  | RichText[];
-
-type RichBlock =
-  | { type: "section_heading"; text: RichText }
-  | { type: "paragraph"; text: RichText }
-  | { type: "divider" }
-  | { type: "footer"; text: RichText }
-  | {
-      type: "list";
-      ordered?: boolean;
-      items: { blocks: RichBlock[] }[];
-    };
-
-const plain = (text: string): RichText => ({ type: "plain", text });
-const bold = (text: string): RichText => ({ type: "bold", text: plain(text) });
-const italic = (text: string): RichText => ({ type: "italic", text: plain(text) });
-
-// Конвертирует ответ модели (HTML-теги <b>/<i> + абзацы) в rich-блоки.
-// Строка-заголовок (<b>...</b> отдельной строкой) → section_heading,
-// последняя курсивная строка → footer, остальное → paragraph.
-export function answerToRichBlocks(answer: string): RichBlock[] {
-  const blocks: RichBlock[] = [];
-  const paragraphs = answer.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-
-  paragraphs.forEach((para, idx) => {
-    const headingMatch = para.match(/^<b>(.+?)<\/b>$/s);
-    const footerMatch = para.match(/^<i>(.+?)<\/i>$/s);
-
-    if (headingMatch && !headingMatch[1].includes("\n")) {
-      blocks.push({ type: "section_heading", text: bold(stripTags(headingMatch[1])) });
-      return;
-    }
-    if (footerMatch && idx === paragraphs.length - 1) {
-      blocks.push({ type: "divider" });
-      blocks.push({ type: "footer", text: italic(stripTags(footerMatch[1])) });
-      return;
-    }
-    blocks.push({ type: "paragraph", text: htmlToRichText(para) });
-  });
-
-  return blocks;
+// Конвертирует HTML-ответ бота в GFM-markdown для Rich Messages
+export function htmlToMarkdown(html: string): string {
+  let t = html;
+  // <b>text</b> → **text**
+  t = t.replace(/<b>([\s\S]*?)<\/b>/g, "**$1**");
+  // <i>text</i> → *text*
+  t = t.replace(/<i>([\s\S]*?)<\/i>/g, "*$1*");
+  // <code>text</code> → `text`
+  t = t.replace(/<code>([\s\S]*?)<\/code>/g, "`$1`");
+  // <pre>text</pre> → ```text```
+  t = t.replace(/<pre>([\s\S]*?)<\/pre>/g, "```\n$1\n```");
+  // <blockquote>text</blockquote> → > text
+  t = t.replace(/<blockquote>([\s\S]*?)<\/blockquote>/g, (_, inner) =>
+    inner.trim().split("\n").map((l: string) => `> ${l}`).join("\n")
+  );
+  // Убираем оставшиеся HTML-теги
+  t = t.replace(/<[^>]+>/g, "");
+  return t.trim();
 }
 
-function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "");
-}
-
-// Разбирает <b>/<i> внутри абзаца в массив RichText
-function htmlToRichText(s: string): RichText {
-  const parts: RichText[] = [];
-  const re = /<(b|i)>(.*?)<\/\1>/gs;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    if (m.index > last) parts.push(plain(stripTags(s.slice(last, m.index))));
-    parts.push(m[1] === "b" ? bold(stripTags(m[2])) : italic(stripTags(m[2])));
-    last = m.index + m[0].length;
-  }
-  if (last < s.length) parts.push(plain(stripTags(s.slice(last))));
-  return parts.length === 1 ? parts[0] : parts;
-}
-
-// Отправка rich-сообщения; true — если сервер поддерживает и приняло
+// Отправка rich-сообщения через Bot API 10.1 sendRichMessage.
+// Принимает готовый HTML-ответ, конвертирует в markdown.
+// Возвращает true если успешно.
 export async function sendRichMessage(
   chatId: number,
-  blocks: RichBlock[]
+  content: string
 ): Promise<boolean> {
+  const markdown = htmlToMarkdown(content);
   try {
     const res = await fetch(`${API()}/sendRichMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        rich_message: { blocks },
+        content: {
+          type: "markdown",
+          text: markdown,
+        },
       }),
     });
     if (!res.ok) {
-      console.error("sendRichMessage failed:", await res.text());
+      const err = await res.text();
+      // Если метод не поддерживается (старый сервер / не 10.1) — тихо фоллбэк
+      if (!err.includes("unknown")) {
+        console.error("sendRichMessage failed:", err);
+      }
     }
     return res.ok;
   } catch {
@@ -100,8 +62,9 @@ export async function sendRichMessage(
 export async function sendRichMessageDraft(
   chatId: number,
   draftId: number,
-  blocks: RichBlock[]
+  content: string
 ): Promise<boolean> {
+  const markdown = htmlToMarkdown(content);
   try {
     const res = await fetch(`${API()}/sendRichMessageDraft`, {
       method: "POST",
@@ -109,7 +72,10 @@ export async function sendRichMessageDraft(
       body: JSON.stringify({
         chat_id: chatId,
         draft_id: draftId,
-        rich_message: { blocks },
+        content: {
+          type: "markdown",
+          text: markdown,
+        },
       }),
     });
     return res.ok;
